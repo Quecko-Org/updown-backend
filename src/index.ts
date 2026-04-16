@@ -1,5 +1,5 @@
 import http from 'http';
-import express from 'express';
+import express, { Router } from 'express';
 import cors from 'cors';
 import { ethers } from 'ethers';
 
@@ -44,6 +44,12 @@ async function main(): Promise<void> {
     config.alchemyApiKey.trim() !== ''
       ? new SmartAccountExecutor(config.alchemyApiKey, config.alchemyGasPolicyId || undefined)
       : null;
+
+  if (!executor) {
+    console.warn(
+      '[Server] WARNING: ALCHEMY_API_KEY not set — /api/smart-account routes will be disabled. Non-custodial onboarding will not work. Set ALCHEMY_API_KEY in the environment.',
+    );
+  }
 
   const app = express();
   app.use(cors());
@@ -101,6 +107,14 @@ async function main(): Promise<void> {
 
   if (executor) {
     app.use('/api/smart-account', createSmartAccountRouter({ executor }));
+  } else {
+    const smartAccountDisabledRouter = Router();
+    smartAccountDisabledRouter.all('*', (_req, res) => {
+      res.status(503).json({
+        error: 'Smart accounts are not configured on this server. ALCHEMY_API_KEY is missing.',
+      });
+    });
+    app.use('/api/smart-account', smartAccountDisabledRouter);
   }
 
   const marketSyncer = new MarketSyncer(provider, books, claimService, wsHolder.ws, engine);
