@@ -32,6 +32,7 @@ import { OrderBookManager } from './OrderBook';
 import { MatchingEngine } from './MatchingEngine';
 import { OrderSide, OrderType, OrderStatus, OrderParams } from './types';
 import { OrderModel } from '../models/Order';
+import { calculateFeeBreakdown, estimateTotalFee } from '../lib/feeEstimate';
 
 // Mock MongoDB models to avoid needing a real database
 jest.mock('../models/Order', () => ({
@@ -480,5 +481,46 @@ describe('MatchingEngine', () => {
     const book = books.getOrCreate(TEST_MARKET, 1);
     expect(book.getOrderCount()).toBe(0);
     expect(OrderModel.updateMany).toHaveBeenCalled();
+  });
+});
+
+describe('Probability-weighted fees (Polymarket formula)', () => {
+  const PLATFORM_BPS = 70;
+  const MAKER_BPS = 80;
+  /** 1000 USDT in 6-decimal base units */
+  const FILL_1000_USDT = 1_000_000_000n;
+
+  it('50¢ (5000 bps) peak: same as flat bps on 1000 USDT → 7 + 8 USDT', () => {
+    const { platformFee, makerFee } = calculateFeeBreakdown(FILL_1000_USDT, 5000, PLATFORM_BPS, MAKER_BPS);
+    expect(platformFee).toBe(7_000_000n);
+    expect(makerFee).toBe(8_000_000n);
+  });
+
+  it('10¢ (1000 bps): weight 0.36 → 2.52 + 2.88 USDT on 1000 USDT', () => {
+    const { platformFee, makerFee } = calculateFeeBreakdown(FILL_1000_USDT, 1000, PLATFORM_BPS, MAKER_BPS);
+    expect(platformFee).toBe(2_520_000n);
+    expect(makerFee).toBe(2_880_000n);
+  });
+
+  it('99¢ (9900 bps): ~0.28 + ~0.32 USDT on 1000 USDT', () => {
+    const { platformFee, makerFee } = calculateFeeBreakdown(FILL_1000_USDT, 9900, PLATFORM_BPS, MAKER_BPS);
+    expect(platformFee).toBe(277_200n);
+    expect(makerFee).toBe(316_800n);
+  });
+
+  it('50¢ with 1 USDT fill: exact integer micro-fees (no fractional dust)', () => {
+    const oneUsdt = 1_000_000n;
+    const { platformFee, makerFee } = calculateFeeBreakdown(oneUsdt, 5000, PLATFORM_BPS, MAKER_BPS);
+    expect(platformFee).toBe(7_000n);
+    expect(makerFee).toBe(8_000n);
+    expect(estimateTotalFee(oneUsdt, 5000, PLATFORM_BPS, MAKER_BPS)).toBe(15_000n);
+  });
+
+  it('fee at 30¢ equals fee at 70¢ (symmetry)', () => {
+    const fill = 500_000_000n;
+    const a = calculateFeeBreakdown(fill, 3000, PLATFORM_BPS, MAKER_BPS);
+    const b = calculateFeeBreakdown(fill, 7000, PLATFORM_BPS, MAKER_BPS);
+    expect(a.platformFee).toBe(b.platformFee);
+    expect(a.makerFee).toBe(b.makerFee);
   });
 });

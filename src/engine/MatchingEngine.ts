@@ -10,6 +10,7 @@ import {
   OrderParams,
 } from './types';
 import { config } from '../config';
+import { calculateFeeBreakdown } from '../lib/feeEstimate';
 import { OrderModel } from '../models/Order';
 import { TradeModel } from '../models/Trade';
 import { MarketModel } from '../models/Market';
@@ -444,8 +445,14 @@ export class MatchingEngine extends EventEmitter {
     fillAmount: bigint,
     book: ReturnType<OrderBookManager['getOrCreate']>
   ): Promise<void> {
-    const platformFee = (fillAmount * BigInt(config.platformFeeBps)) / 10000n;
-    const makerFee = (fillAmount * BigInt(config.makerFeeBps)) / 10000n;
+    // Polymarket taker fee formula: fee scales with p(1−p), peak at 50¢ (see src/lib/feeEstimate.ts).
+    const priceBps = BigInt(price);
+    const { platformFee, makerFee } = calculateFeeBreakdown(
+      fillAmount,
+      Number(priceBps),
+      config.platformFeeBps,
+      config.makerFeeBps
+    );
 
     const [buyer, seller] =
       taker.side === OrderSide.BUY
