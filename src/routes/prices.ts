@@ -1,34 +1,34 @@
 import { Router, Request, Response } from 'express';
 import { config } from '../config';
 
-const BINANCE_TIMEOUT_MS = 5000;
+const UPSTREAM_TIMEOUT_MS = 5000;
 
-function binancePairFromSymbol(symbol: string): string | null {
+function coinbasePairFromSymbol(symbol: string): string | null {
   const s = symbol.trim().toUpperCase();
-  if (s === 'BTC') return 'BTCUSDT';
-  if (s === 'ETH') return 'ETHUSDT';
+  if (s === 'BTC') return 'BTC-USD';
+  if (s === 'ETH') return 'ETH-USD';
   return null;
 }
 
 /**
- * GET /prices/history/:symbol — last hour of 1m candles from Binance public klines (no auth).
- * Response: `[[closeTimeMs, closePriceString], ...]` for the frontend price chart parser.
+ * GET /prices/history/:symbol — 1-minute candles from Coinbase public candles (no auth).
+ * Response: `[[closeTimeMs, closePriceString], ...]` (oldest first) for the frontend price chart parser.
  */
 export function createPricesRouter(): Router {
   const router = Router();
 
   router.get('/history/:symbol', async (req: Request, res: Response) => {
-    const pair = binancePairFromSymbol(String(req.params.symbol ?? ''));
+    const pair = coinbasePairFromSymbol(String(req.params.symbol ?? ''));
     if (!pair) {
       res.status(400).json({ error: 'Unsupported symbol' });
       return;
     }
 
-    const base = config.binanceKlinesBaseUrl.replace(/\/$/, '');
-    const url = `${base}/api/v3/klines?symbol=${encodeURIComponent(pair)}&interval=1m&limit=60`;
+    const base = config.coinbaseApiBaseUrl.replace(/\/$/, '');
+    const url = `${base}/products/${encodeURIComponent(pair)}/candles?granularity=60`;
 
     const ac = new AbortController();
-    const t = setTimeout(() => ac.abort(), BINANCE_TIMEOUT_MS);
+    const t = setTimeout(() => ac.abort(), UPSTREAM_TIMEOUT_MS);
 
     try {
       let upstreamRes: globalThis.Response;
@@ -39,7 +39,7 @@ export function createPricesRouter(): Router {
       }
 
       if (!upstreamRes.ok) {
-        console.error(`[Prices] Binance upstream non-2xx: ${upstreamRes.status}`);
+        console.error(`[Prices] Coinbase upstream non-2xx: ${upstreamRes.status}`);
         res.status(502).json({ error: 'Upstream error' });
         return;
       }
@@ -54,18 +54,20 @@ export function createPricesRouter(): Router {
       }
 
       if (!Array.isArray(body)) {
-        console.error('[Prices] Binance response was not a JSON array');
+        console.error('[Prices] Coinbase response was not a JSON array');
         res.status(502).json({ error: 'Upstream returned unexpected data' });
         return;
       }
 
       const points = body
-        .filter((row): row is unknown[] => Array.isArray(row) && row.length >= 7)
+        .filter((row): row is unknown[] => Array.isArray(row) && row.length >= 5)
         .map((row) => {
-          const closeTime = Number(row[6]);
+          const timeSec = Number(row[0]);
           const close = String(row[4]);
-          return [closeTime, close] as [number, string];
-        });
+          return [timeSec * 1000, close] as [number, string];
+        })
+        .reverse()
+        .slice(-60);
 
       res.json(points);
     } catch (err: unknown) {
