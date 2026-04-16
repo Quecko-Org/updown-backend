@@ -51,8 +51,8 @@ export const config = {
     'https://rain-speed-markets-dev-api.quecko.org'
   ),
 
-  /** Binance public klines endpoint (price history, no auth required). */
-  binanceKlinesBaseUrl: optional('BINANCE_KLINES_BASE_URL', 'https://api.binance.com'),
+  /** Coinbase Exchange public REST (candles / price history, no auth required). */
+  coinbaseApiBaseUrl: optional('COINBASE_API_BASE_URL', 'https://api.exchange.coinbase.com'),
 } as const;
 
 export const USDT_DECIMALS = 6;
