@@ -71,7 +71,7 @@ export function createMarketsRouter(
       }
 
       const filter: Record<string, unknown> = {
-        status: { $in: ['ACTIVE', 'TRADING_ENDED', 'RESOLVED'] },
+        status: { $in: ['ACTIVE', 'TRADING_ENDED', 'RESOLVED', 'CLAIMED'] },
       };
       if (durationFilter !== undefined) {
         filter.duration = durationFilter;
