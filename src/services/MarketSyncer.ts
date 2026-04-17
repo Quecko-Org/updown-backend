@@ -78,8 +78,13 @@ export class MarketSyncer {
       allDocs.map((doc) => parseInt(doc.marketId, 10)).filter((n) => !isNaN(n))
     );
 
+    // Start scanning from the lowest known ID (not 1) to skip non-existent ranges
+    // from old settlement contracts. If DB is empty, start from 1.
+    const minKnown = knownIds.size > 0 ? Math.min(...knownIds) : 1;
+    const scanStart = Math.max(1, minKnown);
+
     const missingIds: number[] = [];
-    for (let id = 1; id < nextId && missingIds.length < 50; id++) {
+    for (let id = scanStart; id < nextId && missingIds.length < 50; id++) {
       if (!knownIds.has(id)) {
         missingIds.push(id);
       }
